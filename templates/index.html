@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>iPod Manager</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.3rem; }
+  .mount { color: #888; font-size: 0.85rem; margin-bottom: 1.5rem; }
+  .flash { padding: 0.6rem 1rem; border-radius: 6px; margin-bottom: 1rem; }
+  .flash.ok { background: #e0f5e0; color: #1a5c1a; }
+  .flash.error { background: #fbe3e3; color: #8a1f1f; }
+  #dropzone {
+    border: 2px dashed #999; border-radius: 10px; padding: 2.5rem 1rem;
+    text-align: center; color: #777; margin-bottom: 1.5rem; transition: 0.15s;
+  }
+  #dropzone.drag { border-color: #4a90d9; background: rgba(74,144,217,0.08); color: #4a90d9; }
+  #dropzone.uploading { border-color: #4a90d9; }
+  .upload-anim {
+    margin: 0; text-align: left; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.85rem; line-height: 1.5;
+  }
+  .upload-anim .wave { font-size: 1.1rem; letter-spacing: 1px; color: #4a90d9; display: block; margin-bottom: 0.4rem; }
+  .upload-anim .row { display: block; white-space: pre; }
+  .upload-anim .row.done { color: #2a8a2a; }
+  .upload-anim .row.failed { color: #c66; }
+  .upload-anim .summary { display: block; margin-top: 0.4rem; color: #4a90d9; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.4rem 0.3rem; border-bottom: 1px solid #ddd; font-size: 0.9rem; }
+  td.dur, th.dur { text-align: right; white-space: nowrap; }
+  button.del { background: none; border: 1px solid #c66; color: #c66; border-radius: 5px; padding: 0.2rem 0.5rem; cursor: pointer; font-size: 0.8rem; }
+  button.del:hover { background: #c66; color: white; }
+  .toolbar { display: flex; justify-content: space-between; align-items: center; margin: 1rem 0; }
+  .eject-btn { background: #444; color: white; border: none; border-radius: 6px; padding: 0.4rem 0.9rem; cursor: pointer; }
+  #player-bar {
+    position: sticky; top: 0; background: Canvas; padding: 0.6rem 0; margin-bottom: 0.5rem;
+    border-bottom: 1px solid #ddd; display: none; align-items: center; gap: 0.6rem;
+  }
+  #player-bar.active { display: flex; }
+  #player-bar audio { flex: 1; height: 32px; }
+  #now-playing { font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+  button.play { background: none; border: 1px solid #4a90d9; color: #4a90d9; border-radius: 5px; padding: 0.2rem 0.5rem; cursor: pointer; font-size: 0.8rem; margin-right: 0.3rem; }
+  button.play:hover { background: #4a90d9; color: white; }
+  tr.playing td { background: rgba(74,144,217,0.08); }
+  button.edit, button.save, button.cancel {
+    background: none; border: 1px solid #999; color: inherit; border-radius: 5px;
+    padding: 0.2rem 0.5rem; cursor: pointer; font-size: 0.8rem; margin-right: 0.3rem;
+  }
+  button.save { border-color: #2a8a2a; color: #2a8a2a; }
+  input.edit-input { width: 100%; box-sizing: border-box; font-size: 0.9rem; padding: 0.1rem 0.3rem; }
+  td.actions { white-space: nowrap; }
+  a.download {
+    display: inline-block; border: 1px solid #999; color: inherit; border-radius: 5px;
+    padding: 0.2rem 0.5rem; font-size: 0.8rem; margin-right: 0.3rem; text-decoration: none;
+  }
+  a.download:hover { background: rgba(128,128,128,0.15); }
+  #bulk-bar #bulk-download { background: #4a90d9; }
+  .orphan-banner {
+    display: flex; justify-content: space-between; align-items: center;
+    background: #fff6dd; color: #6b5300; border: 1px solid #e8d078;
+    border-radius: 8px; padding: 0.6rem 1rem; margin-bottom: 1rem; font-size: 0.88rem;
+  }
+  .orphan-banner button { background: #6b5300; color: white; border: none; border-radius: 6px; padding: 0.35rem 0.8rem; cursor: pointer; }
+  #bulk-bar {
+    display: none; justify-content: space-between; align-items: center;
+    background: #fbe3e3; border: 1px solid #e3a3a3; border-radius: 8px;
+    padding: 0.5rem 1rem; margin-bottom: 0.5rem; font-size: 0.88rem; color: #8a1f1f;
+  }
+  #bulk-bar.active { display: flex; }
+  #bulk-bar button { background: #c66; color: white; border: none; border-radius: 6px; padding: 0.35rem 0.8rem; cursor: pointer; }
+  td.select, th.select { width: 1.6rem; }
+  .nano-notice {
+    background: #eef4fb; color: #2c4a6b; border: 1px solid #b9d3ec;
+    border-radius: 8px; padding: 0.6rem 1rem; margin-bottom: 1rem; font-size: 0.85rem;
+  }
+  .gdrive-section { margin-bottom: 1rem; }
+  .gdrive-btn {
+    display: inline-block; background: #4a90d9; color: white; text-decoration: none;
+    border: none; border-radius: 6px; padding: 0.5rem 1rem; cursor: pointer; font-size: 0.9rem;
+  }
+  .gdrive-setup { font-size: 0.85rem; color: #666; }
+  .gdrive-setup summary { cursor: pointer; color: #4a90d9; }
+  .gdrive-setup p { max-width: 500px; }
+  .gdrive-setup code { font-size: 0.8em; background: rgba(128,128,128,0.15); padding: 0.1em 0.3em; border-radius: 3px; }
+  .gdrive-setup form { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.5rem; }
+  .gdrive-setup input { padding: 0.35rem 0.5rem; font-size: 0.85rem; }
+  .gdrive-setup button { padding: 0.35rem 0.8rem; cursor: pointer; }
+  .gdrive-browser {
+    border: 1px solid #ccc; border-radius: 8px; padding: 0.75rem; margin-top: 0.5rem; max-width: 500px;
+  }
+  .gdrive-breadcrumb { font-size: 0.85rem; margin-bottom: 0.5rem; }
+  .gdrive-breadcrumb a { color: #4a90d9; text-decoration: none; cursor: pointer; }
+  .gdrive-list { max-height: 260px; overflow-y: auto; }
+  .gdrive-row {
+    display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.1rem;
+    font-size: 0.88rem; border-bottom: 1px solid rgba(128,128,128,0.15);
+  }
+  .gdrive-row.gdrive-folder { cursor: pointer; }
+  .gdrive-row.gdrive-folder:hover { color: #4a90d9; }
+  .gdrive-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 0.6rem; }
+  .gdrive-actions button {
+    background: #4a90d9; color: white; border: none; border-radius: 6px;
+    padding: 0.4rem 0.9rem; cursor: pointer;
+  }
+  .gdrive-actions button:disabled { background: #aaa; cursor: default; }
+</style>
+</head>
+<body>
+<h1>iPod Manager</h1>
+
+{% if device_type == "shuffle" %}
+  <div class="mount">Connected: {{ mount }} &middot; iPod Shuffle &middot; {{ tracks|length }} track(s)</div>
+{% elif device_type == "nano6" %}
+  <div class="mount">Connected: {{ mount }} &middot; iPod Nano 6G &middot; {{ tracks|length }} track(s)</div>
+{% else %}
+  <div class="mount">No iPod detected. Plug in a Shuffle or Nano 6G and reload this page.</div>
+{% endif %}
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, msg in messages %}
+    <div class="flash {{ category }}">{{ msg }}</div>
+  {% endfor %}
+{% endwith %}
+
+{% if mount %}
+{% if device_type == "shuffle" and orphans %}
+  <div class="orphan-banner">
+    <span>
+      {{ orphans|length }} loose file(s) sitting outside the music library
+      (the shuffle can't play these as-is): {{ orphans|join(", ") }}
+    </span>
+    <form action="/import-orphans" method="post">
+      <button type="submit">Import</button>
+    </form>
+  </div>
+{% endif %}
+
+{% if device_type == "nano6" %}
+  <div class="nano-notice">
+    Nano 6G support is read-only for adding/removing songs: you can browse and edit
+    title/artist here, but uploads and deletes aren't supported. Adding or removing
+    files would require re-signing the device's file-location database with Apple's
+    obfuscated "HashAB" scheme, which has no clean reimplementation &mdash; not worth
+    the risk to your library.
+  </div>
+{% endif %}
+
+{% if device_type == "shuffle" %}
+<div id="dropzone">
+  <div id="dropzone-prompt">
+    Drag &amp; drop MP3 / M4A / WAV files here (FLAC, OGG, WMA, AIFF, Opus, DSF auto-convert to AAC 256kbps), or
+    <label style="text-decoration:underline; cursor:pointer;">
+      browse<input type="file" name="files" id="fileInput" multiple hidden>
+    </label>
+  </div>
+  <pre id="uploadAnim" class="upload-anim" hidden></pre>
+</div>
+
+<div class="gdrive-section">
+  {% if not gdrive_configured %}
+    <details class="gdrive-setup">
+      <summary>Import from Google Drive (not set up yet)</summary>
+      <p>
+        One-time setup: create an OAuth client at
+        <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a>
+        (enable the Drive API, app type "Desktop app", add
+        <code>http://localhost:5757/gdrive/oauth-callback</code> as an authorized redirect URI),
+        then paste the credentials below.
+      </p>
+      <form action="/gdrive/setup" method="post">
+        <input type="text" name="client_id" placeholder="Client ID" required>
+        <input type="password" name="client_secret" placeholder="Client Secret" required>
+        <button type="submit">Save &amp; Connect</button>
+      </form>
+    </details>
+  {% elif not gdrive_logged_in %}
+    <a class="gdrive-btn" href="/gdrive/login">Connect Google Drive</a>
+  {% else %}
+    <button id="gdriveToggle" class="gdrive-btn" type="button">Import from Google Drive</button>
+    <div id="gdriveBrowser" class="gdrive-browser" hidden>
+      <div id="gdriveBreadcrumb" class="gdrive-breadcrumb"></div>
+      <div id="gdriveList" class="gdrive-list"></div>
+      <div class="gdrive-actions">
+        <span id="gdriveSelCount"></span>
+        <button id="gdriveImportBtn" type="button" disabled>Import Selected</button>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="toolbar">
+  <span></span>
+  <form action="/eject" method="post" onsubmit="return confirm('Eject the iPod now?');">
+    <button class="eject-btn" type="submit">Safely Eject</button>
+  </form>
+</div>
+
+<div id="player-bar">
+  <audio id="player" controls></audio>
+  <span id="now-playing"></span>
+</div>
+
+<div id="bulk-bar">
+  <span id="bulk-count"></span>
+  <span>
+    <button id="bulk-download" class="bulk-download" type="button">Download Selected</button>
+    {% if device_type == "shuffle" %}<button id="bulk-delete" type="button">Delete Selected</button>{% endif %}
+  </span>
+</div>
+
+<table>
+  <thead><tr><th class="select"><input type="checkbox" id="selectAll"></th><th></th><th>Title</th><th>Artist</th><th class="dur">Length</th><th></th></tr></thead>
+  <tbody>
+  {% for t in tracks %}
+    <tr id="row-{{ t.name }}">
+      <td class="select"><input type="checkbox" class="row-select" data-file="{{ t.name }}"></td>
+      <td><button class="play" type="button" data-file="{{ t.name }}" data-label="{{ t.title }} — {{ t.artist or '' }}">▶</button></td>
+      <td class="title-cell" data-value="{{ t.title }}">{{ t.title }}</td>
+      <td class="artist-cell" data-value="{{ t.artist or '' }}">{{ t.artist or "" }}</td>
+      <td class="dur">{{ "%d:%02d"|format(t.duration_s // 60, t.duration_s % 60) }}</td>
+      <td class="actions">
+        <button class="edit" type="button" data-file="{{ t.name }}">Edit</button>
+        <a class="download" href="{{ url_prefix }}/download/{{ t.name }}">Download</a>
+        {% if device_type == "shuffle" %}
+        <form action="/delete/{{ t.name }}" method="post" onsubmit="return confirm('Delete {{ t.title }}?');">
+          <button class="del" type="submit">Delete</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<script>
+  const URL_PREFIX = "{{ url_prefix }}";
+
+  {% if device_type == "shuffle" %}
+  const dropzone = document.getElementById('dropzone');
+  const dropzonePrompt = document.getElementById('dropzone-prompt');
+  const uploadAnim = document.getElementById('uploadAnim');
+  const fileInput = document.getElementById('fileInput');
+
+  const CONVERTIBLE_EXTS = ['.flac', '.ogg', '.oga', '.wma', '.aiff', '.aif', '.alac', '.opus', '.dsf'];
+  const EQ_CHARS = '▁▂▃▄▅▆▇█';
+  const SPINNER = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
+
+  function eqFrame(t, width) {
+    let s = '';
+    for (let i = 0; i < width; i++) {
+      const v = Math.sin(i * 0.5 + t) * 0.5 + 0.5;
+      s += EQ_CHARS[Math.min(EQ_CHARS.length - 1, Math.floor(v * EQ_CHARS.length))];
+    }
+    return s;
+  }
+
+  let uploadItems = [];   // { name, state: queued|converting|uploading|done|failed, error }
+  let waveT = 0, spinIdx = 0, animTimer = null, summaryText = '';
+
+  function renderUploadStatus() {
+    uploadAnim.textContent = '';
+
+    const wave = document.createElement('span');
+    wave.className = 'wave';
+    wave.textContent = eqFrame(waveT, 24);
+    uploadAnim.appendChild(wave);
+
+    for (const item of uploadItems) {
+      const row = document.createElement('span');
+      let marker;
+      if (item.state === 'done') { marker = '✓'; row.className = 'row done'; }
+      else if (item.state === 'failed') { marker = '✗'; row.className = 'row failed'; }
+      else if (item.state === 'queued') { marker = '·'; row.className = 'row'; }
+      else { marker = SPINNER[spinIdx]; row.className = 'row'; }
+      const label = item.state === 'failed' ? `failed: ${item.error}` : item.state;
+      row.textContent = `${marker} ${item.name} — ${label}`;
+      uploadAnim.appendChild(row);
+    }
+
+    if (summaryText) {
+      const summary = document.createElement('span');
+      summary.className = 'summary';
+      summary.textContent = summaryText;
+      uploadAnim.appendChild(summary);
+    }
+  }
+
+  function startUploadAnimation() {
+    dropzonePrompt.hidden = true;
+    uploadAnim.hidden = false;
+    dropzone.classList.add('uploading');
+    renderUploadStatus();
+    animTimer = setInterval(() => {
+      waveT += 0.5;
+      spinIdx = (spinIdx + 1) % SPINNER.length;
+      renderUploadStatus();
+    }, 120);
+  }
+
+  // stageFn(item) does the network work specific to the item's source
+  // (local file upload vs. Google Drive download) and returns the parsed
+  // /upload-stage-or-equivalent JSON response. Everything after staging
+  // (commit + finalize + the progress animation) is shared.
+  async function processUploadItems(items, stageFn) {
+    uploadItems = items;
+    summaryText = '';
+    startUploadAnimation();
+
+    for (const item of uploadItems) {
+      const ext = '.' + item.name.split('.').pop().toLowerCase();
+      item.state = CONVERTIBLE_EXTS.includes(ext) ? 'converting' : 'uploading';
+      try {
+        const staged = await stageFn(item);
+        if (!staged.ok) throw new Error(staged.error || 'stage failed');
+
+        item.state = 'uploading';
+        const commitResp = await fetch('/upload-commit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ token: staged.token }),
+        });
+        const committed = await commitResp.json();
+        if (!committed.ok) throw new Error(committed.error || 'upload failed');
+
+        item.state = 'done';
+      } catch (err) {
+        item.state = 'failed';
+        item.error = err.message;
+      }
+    }
+
+    const finalizeResp = await fetch('/upload-finalize', { method: 'POST' });
+    const result = await finalizeResp.json();
+    const okCount = uploadItems.filter(i => i.state === 'done').length;
+    summaryText = result.ok
+      ? `Done — ${okCount}/${uploadItems.length} added. iTunesSD now has ${result.count} tracks.`
+      : `Done, but rebuild failed: ${result.error}`;
+    clearInterval(animTimer);
+    renderUploadStatus();
+    setTimeout(() => location.reload(), 1200);
+  }
+
+  function submitFiles(fileList) {
+    if (!fileList || !fileList.length) return;
+    const items = Array.from(fileList).map(f => ({ name: f.name, file: f, state: 'queued', error: null }));
+    processUploadItems(items, async (item) => {
+      const stageBody = new FormData();
+      stageBody.append('file', item.file);
+      const resp = await fetch('/upload-stage', { method: 'POST', body: stageBody });
+      return resp.json();
+    });
+  }
+
+  fileInput.addEventListener('change', () => submitFiles(fileInput.files));
+
+  ['dragenter', 'dragover'].forEach(evt =>
+    dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
+  ['dragleave', 'drop'].forEach(evt =>
+    dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+  dropzone.addEventListener('drop', e => submitFiles(e.dataTransfer.files));
+
+  let driveFolderStack = [{ id: 'root', name: 'My Drive' }];
+  let selectedDriveFiles = new Map();  // id -> name
+
+  async function loadGdriveFolder(folderId) {
+    const list = document.getElementById('gdriveList');
+    list.textContent = 'Loading…';
+    const resp = await fetch('/gdrive/browse?folder_id=' + encodeURIComponent(folderId));
+    const data = await resp.json();
+    if (!data.ok) { list.textContent = ''; alert('Google Drive error: ' + data.error); return; }
+    renderGdriveBreadcrumb();
+    renderGdriveList(data.folders, data.files);
+  }
+
+  function renderGdriveBreadcrumb() {
+    const bc = document.getElementById('gdriveBreadcrumb');
+    bc.textContent = '';
+    driveFolderStack.forEach((f, i) => {
+      const link = document.createElement('a');
+      link.href = '#';
+      link.textContent = f.name;
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        driveFolderStack = driveFolderStack.slice(0, i + 1);
+        loadGdriveFolder(f.id);
+      });
+      bc.appendChild(link);
+      if (i < driveFolderStack.length - 1) bc.appendChild(document.createTextNode(' / '));
+    });
+  }
+
+  function renderGdriveList(folders, files) {
+    const list = document.getElementById('gdriveList');
+    list.textContent = '';
+
+    folders.forEach(f => {
+      const row = document.createElement('div');
+      row.className = 'gdrive-row gdrive-folder';
+      row.textContent = '📁 ' + f.name;
+      row.addEventListener('click', () => {
+        driveFolderStack.push({ id: f.id, name: f.name });
+        loadGdriveFolder(f.id);
+      });
+      list.appendChild(row);
+    });
+
+    files.forEach(f => {
+      const row = document.createElement('div');
+      row.className = 'gdrive-row';
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.disabled = !f.importable;
+      cb.checked = selectedDriveFiles.has(f.id);
+      cb.addEventListener('change', () => {
+        if (cb.checked) selectedDriveFiles.set(f.id, f.name);
+        else selectedDriveFiles.delete(f.id);
+        updateGdriveSelCount();
+      });
+      row.appendChild(cb);
+
+      const label = document.createElement('span');
+      label.textContent = f.name + (f.importable ? '' : ' (unsupported format)');
+      row.appendChild(label);
+
+      list.appendChild(row);
+    });
+
+    if (!folders.length && !files.length) {
+      list.textContent = '(empty folder)';
+    }
+    updateGdriveSelCount();
+  }
+
+  function updateGdriveSelCount() {
+    const count = selectedDriveFiles.size;
+    document.getElementById('gdriveSelCount').textContent = count ? count + ' selected' : '';
+    document.getElementById('gdriveImportBtn').disabled = count === 0;
+  }
+
+  const gdriveToggle = document.getElementById('gdriveToggle');
+  if (gdriveToggle) {
+    gdriveToggle.addEventListener('click', () => {
+      const panel = document.getElementById('gdriveBrowser');
+      const wasHidden = panel.hidden;
+      panel.hidden = !panel.hidden;
+      if (wasHidden && !panel.dataset.loaded) {
+        panel.dataset.loaded = '1';
+        loadGdriveFolder('root');
+      }
+    });
+  }
+
+  const gdriveImportBtn = document.getElementById('gdriveImportBtn');
+  if (gdriveImportBtn) {
+    gdriveImportBtn.addEventListener('click', () => {
+      const items = Array.from(selectedDriveFiles.entries()).map(([id, name]) => ({ id, name, state: 'queued', error: null }));
+      if (!items.length) return;
+      selectedDriveFiles.clear();
+      document.getElementById('gdriveBrowser').hidden = true;
+      processUploadItems(items, async (item) => {
+        const resp = await fetch('/gdrive/stage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ file_id: item.id, name: item.name }),
+        });
+        return resp.json();
+      });
+    });
+  }
+  {% endif %}
+
+  const playerBar = document.getElementById('player-bar');
+  const player = document.getElementById('player');
+  const nowPlaying = document.getElementById('now-playing');
+  let currentRow = null;
+
+  function playTrack(filename, label) {
+    if (currentRow) currentRow.classList.remove('playing');
+    player.src = URL_PREFIX + '/audio/' + encodeURIComponent(filename);
+    playerBar.classList.add('active');
+    nowPlaying.textContent = label;
+    currentRow = document.getElementById('row-' + filename);
+    if (currentRow) currentRow.classList.add('playing');
+    player.play();
+  }
+
+  document.querySelectorAll('button.play').forEach(btn => {
+    btn.addEventListener('click', () => playTrack(btn.dataset.file, btn.dataset.label));
+  });
+
+  document.querySelectorAll('button.edit').forEach(btn => {
+    btn.addEventListener('click', () => startEdit(btn.dataset.file));
+  });
+
+  function startEdit(file) {
+    const row = document.getElementById('row-' + file);
+    const titleCell = row.querySelector('.title-cell');
+    const artistCell = row.querySelector('.artist-cell');
+    const actionsCell = row.querySelector('.actions');
+
+    const titleInput = document.createElement('input');
+    titleInput.type = 'text';
+    titleInput.className = 'edit-input';
+    titleInput.value = titleCell.dataset.value;
+
+    const artistInput = document.createElement('input');
+    artistInput.type = 'text';
+    artistInput.className = 'edit-input';
+    artistInput.value = artistCell.dataset.value;
+
+    titleCell.textContent = '';
+    titleCell.appendChild(titleInput);
+    artistCell.textContent = '';
+    artistCell.appendChild(artistInput);
+
+    actionsCell.textContent = '';
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'save';
+    saveBtn.textContent = 'Save';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'cancel';
+    cancelBtn.textContent = 'Cancel';
+    actionsCell.appendChild(saveBtn);
+    actionsCell.appendChild(cancelBtn);
+
+    titleInput.focus();
+    cancelBtn.addEventListener('click', () => location.reload());
+    saveBtn.addEventListener('click', async () => {
+      saveBtn.disabled = true;
+      await fetch(URL_PREFIX + '/edit/' + encodeURIComponent(file), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ title: titleInput.value, artist: artistInput.value }),
+      });
+      location.reload();
+    });
+  }
+
+  const selectAll = document.getElementById('selectAll');
+  const rowCheckboxes = Array.from(document.querySelectorAll('input.row-select'));
+  const bulkBar = document.getElementById('bulk-bar');
+  const bulkCount = document.getElementById('bulk-count');
+  const bulkDownloadBtn = document.getElementById('bulk-download');
+  const bulkDeleteBtn = document.getElementById('bulk-delete');
+
+  function updateBulkBar() {
+    const checked = rowCheckboxes.filter(cb => cb.checked);
+    if (checked.length) {
+      bulkBar.classList.add('active');
+      bulkCount.textContent = checked.length + ' track(s) selected';
+    } else {
+      bulkBar.classList.remove('active');
+    }
+    selectAll.checked = checked.length === rowCheckboxes.length && rowCheckboxes.length > 0;
+    selectAll.indeterminate = checked.length > 0 && checked.length < rowCheckboxes.length;
+  }
+
+  selectAll.addEventListener('change', () => {
+    rowCheckboxes.forEach(cb => { cb.checked = selectAll.checked; });
+    updateBulkBar();
+  });
+
+  rowCheckboxes.forEach(cb => cb.addEventListener('change', updateBulkBar));
+
+  bulkDownloadBtn.addEventListener('click', () => {
+    const checked = rowCheckboxes.filter(cb => cb.checked).map(cb => cb.dataset.file);
+    if (!checked.length) return;
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = URL_PREFIX + '/download-zip';
+    checked.forEach(f => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'filenames';
+      input.value = f;
+      form.appendChild(input);
+    });
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
+  });
+
+  if (bulkDeleteBtn) {
+    bulkDeleteBtn.addEventListener('click', async () => {
+      const checked = rowCheckboxes.filter(cb => cb.checked).map(cb => cb.dataset.file);
+      if (!checked.length) return;
+      if (!confirm(`Delete ${checked.length} selected track(s)?`)) return;
+      bulkDeleteBtn.disabled = true;
+      const body = new URLSearchParams();
+      checked.forEach(f => body.append('filenames', f));
+      await fetch('/delete-selected', { method: 'POST', body });
+      location.reload();
+    });
+  }
+</script>
+{% endif %}
+</body>
+</html>

@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+
+# Portable distribution artifacts -- generated, not source. Rebuild via the
+# packaging steps (relocatable Python + static ffmpeg) instead of committing
+# these; distribute the .zip directly (AirDrop/USB/GitHub Release) if needed.
+iPod Manager.app/
+iPod Manager.zip
+resources/ffmpeg
