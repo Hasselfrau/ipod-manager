@@ -13,6 +13,8 @@ import subprocess
 
 import mutagen
 
+import platform_support
+
 HEADER_LEN = 64
 TRACK_ENTRY_LEN = 372
 TRACK_HEADER_FIXED_LEN = 20  # id(4) + total_length(4) + number_of_tracks(4) + unknown(8)
@@ -25,13 +27,9 @@ NEEDS_CONVERSION = {".flac", ".ogg", ".oga", ".wma", ".aiff", ".aif", ".alac", "
 
 
 def _ffmpeg_path():
-    """A statically-linked ffmpeg binary shipped alongside this file
-    (resources/ffmpeg), if present -- used by the portable .app bundle so
-    it doesn't depend on Homebrew. Falls back to PATH in dev mode."""
-    bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "ffmpeg")
-    if os.path.exists(bundled):
-        return bundled
-    return "ffmpeg"
+    """A statically-linked ffmpeg shipped in resources/ (portable builds),
+    else ffmpeg from PATH."""
+    return platform_support.ffmpeg_path(os.path.dirname(os.path.abspath(__file__)))
 
 # Verified byte-for-byte from a real device: id(4) shdb-order-reversed "hphs",
 # total_length(4)=0x48, number_of_playlists(4)=1, then 56 bytes of
@@ -49,7 +47,7 @@ FILETYPES = {".mp3": 1, ".m4a": 2, ".m4b": 2, ".aac": 2, ".wav": 4}
 
 def find_ipod_mount():
     """Return the mount point of a connected classic iPod Shuffle, or None."""
-    for vol in glob.glob("/Volumes/*"):
+    for vol in platform_support.candidate_volumes():
         if os.path.isfile(os.path.join(vol, "iPod_Control", "iTunes", "iTunesSD")):
             return vol
     return None
@@ -137,16 +135,14 @@ def _random_name(existing_lower, ext):
 
 
 def convert_lossless(src_path, dest_path):
-    """Transcode any ffmpeg-readable audio file to AAC ~256kbps (using
-    macOS's own AudioToolbox encoder -- better quality-per-byte than MP3,
-    and natively supported by the Shuffle), carrying over tags.
+    """Transcode any ffmpeg-readable audio file to AAC ~256kbps (better
+    quality-per-byte than MP3, and natively supported by the Shuffle),
+    carrying over tags. See platform_support.aac_encoder_args for the
+    per-OS encoder choice.
 
-    -ar 44100 -sample_fmt s16 are required, not cosmetic: aac_at only
-    accepts s16/u8 samples and tops out well below 96kHz, so hi-res
-    sources (e.g. 24-bit/96kHz FLAC) fail to encode without them.
-    abr (not vbr) mode is used because aac_at's vbr mode tracks the given
-    bitrate loosely -- it measured ~40% over target on real material,
-    which matters on a Shuffle's very limited storage.
+    -ar 44100 is required, not cosmetic: the Shuffle (and aac_at) top out
+    well below 96kHz, so hi-res sources (e.g. 24-bit/96kHz FLAC) must be
+    resampled.
 
     Raises RuntimeError with ffmpeg's stderr on failure.
     """
@@ -154,11 +150,11 @@ def convert_lossless(src_path, dest_path):
         [
             _ffmpeg_path(), "-y", "-i", src_path,
             "-map", "0:a:0", "-map_metadata", "0",
-            "-ar", "44100", "-sample_fmt", "s16",
-            "-codec:a", "aac_at", "-aac_at_mode", "abr", "-b:a", "256k",
+            "-ar", "44100", *platform_support.aac_encoder_args(),
             dest_path,
         ],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        **platform_support.SUBPROCESS_FLAGS,
     )
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg conversion failed: {result.stderr[-500:]}")

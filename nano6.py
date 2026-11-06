@@ -19,17 +19,19 @@ module built from reverse-engineered Apple binary logic, not a portable
 algorithm. Title/artist edits only touch Library.itdb, never
 Locations.itdb, so they need no signature and carry none of that risk.
 """
-import glob
 import os
 import sqlite3
 import time
+from pathlib import Path
+
+import platform_support
 
 MAC_EPOCH_OFFSET = 978307200  # seconds between 1970-01-01 and 2001-01-01 (Cocoa/CFAbsoluteTime epoch)
 
 
 def find_nano_mount():
     """Return the mount point of a connected Nano 5G/6G/7G-style iPod, or None."""
-    for vol in glob.glob("/Volumes/*"):
+    for vol in platform_support.candidate_volumes():
         if os.path.isfile(_library_path(vol)):
             return vol
     return None
@@ -43,13 +45,19 @@ def _locations_path(mount):
     return os.path.join(mount, "iPod_Control", "iTunes", "iTunes Library.itlp", "Locations.itdb")
 
 
+def _sqlite_uri(path, mode):
+    # as_uri() percent-encodes spaces ("iTunes Library.itlp") and turns
+    # Windows paths into file:///F:/... form, which SQLite requires.
+    return f"{Path(path).absolute().as_uri()}?mode={mode}"
+
+
 def _connect(mount, readonly=True):
     mode = "ro" if readonly else "rw"
-    lib_uri = f"file:{_library_path(mount)}?mode={mode}"
+    lib_uri = _sqlite_uri(_library_path(mount), mode)
     conn = sqlite3.connect(lib_uri, uri=True)
     # Locations.itdb is always opened read-only: we never touch file
     # placement, only Library.itdb metadata columns.
-    loc_uri = f"file:{_locations_path(mount)}?mode=ro"
+    loc_uri = _sqlite_uri(_locations_path(mount), "ro")
     conn.execute(f"ATTACH DATABASE '{loc_uri}' AS loc")
     return conn
 

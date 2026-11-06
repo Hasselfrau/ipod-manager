@@ -4,12 +4,12 @@ iPod Nano 6G (browse + edit tags -- see nano6.py for why writes are limited).
 Run: python3 app.py
 Then open http://127.0.0.1:5757
 
-Only talks to the mounted iPod volume on this Mac -- no network calls,
-binds to localhost only.
+Works on macOS and Windows (OS-specific bits live in platform_support.py).
+Only talks to the mounted iPod volume on this computer -- binds to
+localhost only.
 """
 import os
 import re
-import subprocess
 import tempfile
 import uuid
 import zipfile
@@ -19,6 +19,8 @@ from flask import Flask, abort, flash, jsonify, redirect, render_template, reque
 import gdrive
 import itunessd
 import nano6
+import platform_support
+from platform_support import VOLUMES_HINT
 
 _UNSAFE_FILENAME_CHARS = re.compile(r'[/:*?"<>|\\]')
 
@@ -38,10 +40,20 @@ app.secret_key = os.urandom(24)
 STAGED_UPLOADS = {}
 
 
+if platform_support.IS_WINDOWS:
+    _ACCESS_HINT = "Windows denied access to the iPod's top-level folder. Check the drive isn't write-protected or open in another program."
+else:
+    _ACCESS_HINT = (
+        "macOS hasn't granted this app access to the iPod's top-level folder. "
+        "Grant it in System Settings → Privacy & Security → Files and Folders "
+        "(or Removable Volumes), or run the app from Terminal instead."
+    )
+
+
 def require_mount():
     mount = itunessd.find_ipod_mount()
     if not mount:
-        flash("No iPod Shuffle detected under /Volumes. Plug it in and refresh.", "error")
+        flash(f"No iPod Shuffle detected under {VOLUMES_HINT}. Plug it in and refresh.", "error")
     return mount
 
 
@@ -68,13 +80,7 @@ def index():
         try:
             orphans = [os.path.basename(p) for p in itunessd.list_orphans(mount)]
         except PermissionError:
-            flash(
-                "Can't check for loose files outside the library: macOS hasn't granted "
-                "this app access to the iPod's top-level folder yet. Go to System Settings "
-                "→ Privacy & Security → Files and Folders (or Removable Volumes) "
-                "and allow access, or just run the app from Terminal instead.",
-                "error",
-            )
+            flash("Can't check for loose files outside the library: " + _ACCESS_HINT, "error")
     elif device_type == "nano6":
         tracks = nano6.list_tracks(mount)
         tracks.sort(key=lambda t: (t["title"] or "").lower())
@@ -133,7 +139,7 @@ def upload_stage():
 
     ext = os.path.splitext(f.filename)[1].lower()
     with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-        f.save(tmp.name)
+        f.save(tmp)
         tmp_path = tmp.name
 
     try:
@@ -329,7 +335,7 @@ def edit(filename):
 def nano_edit(pid):
     mount = nano6.find_nano_mount()
     if not mount:
-        flash("No Nano detected under /Volumes. Plug it in and refresh.", "error")
+        flash(f"No Nano detected under {VOLUMES_HINT}. Plug it in and refresh.", "error")
         return redirect(url_for("index"))
 
     title = request.form.get("title", "").strip()
@@ -387,12 +393,7 @@ def import_orphans():
     try:
         orphans = itunessd.list_orphans(mount)
     except PermissionError:
-        flash(
-            "macOS hasn't granted this app access to the iPod's top-level folder. "
-            "Grant it in System Settings → Privacy & Security → Files and Folders "
-            "(or Removable Volumes), or run the app from Terminal instead.",
-            "error",
-        )
+        flash(_ACCESS_HINT, "error")
         return redirect(url_for("index"))
 
     imported, failed = 0, []
@@ -449,7 +450,12 @@ def _send_zip(tracks):
             zf.write(t["path"], arcname=unique_name)
 
     resp = send_file(tmp_path, as_attachment=True, download_name="iPod Tracks.zip", mimetype="application/zip")
-    resp.call_on_close(lambda: os.path.exists(tmp_path) and os.remove(tmp_path))
+    def _cleanup():
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass  # already gone, or (Windows) still locked -- it's just a temp file
+    resp.call_on_close(_cleanup)
     return resp
 
 
@@ -480,13 +486,13 @@ def download_zip():
 def eject():
     mount, _device_type = find_any_mount()
     if not mount:
-        flash("No iPod detected under /Volumes.", "error")
+        flash(f"No iPod detected under {VOLUMES_HINT}.", "error")
         return redirect(url_for("index"))
     try:
-        subprocess.run(["diskutil", "eject", mount], check=True, capture_output=True)
+        platform_support.eject(mount)
         flash(f"Ejected {mount}. Safe to unplug.", "ok")
-    except subprocess.CalledProcessError as e:
-        flash(f"Eject failed: {e.stderr.decode(errors='ignore')}", "error")
+    except Exception as e:
+        flash(f"Eject failed: {e}", "error")
     return redirect(url_for("index"))
 
 
